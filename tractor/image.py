@@ -39,7 +39,7 @@ class Image(MultiParams):
         self.data = data
         if inverr is not None:
             self.inverr = inverr
-        elif invvar is not None:
+        elif invvar is not None: 
             self.setInvvar(invvar)
 
         self.name = name
@@ -156,6 +156,7 @@ class Image(MultiParams):
     def setInvvar(self, iv):
         # work around https://github.com/numpy/numpy/issues/11448
         # (intel mkl / intel-numpy bug)
+        
         with np.errstate(invalid='ignore'):
             self.inverr = np.sqrt(iv)
 

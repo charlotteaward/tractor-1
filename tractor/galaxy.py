@@ -21,8 +21,8 @@ from astrometry.util.miscutils import get_overlapping_region
 
 from tractor import mixture_profiles as mp
 from tractor.utils import ParamList, MultiParams, ScalarParam, BaseParams
-from tractor.patch import Patch, add_patches, ModelMask
-from tractor.basics import SingleProfileSource, BasicSource
+from tractor.patch import Patch, add_patches, add_patches2, ModelMask
+from tractor.basics import SingleProfileSource, BasicSource, PointSource
 
 debug_ps = None
 
@@ -169,22 +169,27 @@ class Galaxy(MultiParams, SingleProfileSource):
 
         # derivatives wrt position
         psteps = pos0.getStepSizes()
+        
         if not self.isParamFrozen('pos'):
             params = pos0.getParams()
             if counts == 0:
                 derivs.extend([None] * len(params))
                 psteps = []
             for i, pstep in enumerate(psteps):
+                pstep=pstep*0.05
+                print(params[i],params[i] + pstep)
                 oldval = pos0.setParam(i, params[i] + pstep)
                 (px, py) = img.getWcs().positionToPixel(pos0, self)
                 pos0.setParam(i, oldval)
+                
                 patchx = self.getUnitFluxModelPatch(
                     img, px=px, py=py, minval=minval, modelMask=modelMask)
                 if patchx is None or patchx.getImage() is None:
                     derivs.append(None)
+                    print('patchx was none')
                     continue
                 dx = (patchx - patch0) * (counts / pstep)
-                dx.setName('d(%s)/d(pos%i)' % (self.dname, i))
+                dx.setName('d(%s)/d(pos%i)' % (self.dname, i)) 
                 derivs.append(dx)
 
         # derivatives wrt brightness
@@ -1127,3 +1132,519 @@ class CompositeGalaxy(MultiParams, BasicSource):
             derivs.extend(dd[npos:])
 
         return derivs
+
+
+class PSFandDevGalaxy_diffcentres(MultiParams, BasicSource):
+    '''
+    A galaxy with Exponential and deVaucouleurs components.
+
+    The two components share a position (ie the centers are the same),
+    but have different brightnesses and shapes.
+    '''
+
+    def __init__(self, pos, brightnessDev, shapeDev, posPoint,brightnessPoint):
+        MultiParams.__init__(self, pos, brightnessDev, shapeDev,
+                             posPoint,brightnessPoint)
+        self.name = self.getName()
+
+    @staticmethod
+    def getNamedParams():
+        return dict(pos=0, brightnessDev=1, shapeDev=2,
+                    posPoint=3,brightnessPoint=4)
+
+    def getName(self):
+        return 'PSFandExpGalaxy_diffcentres'
+
+    def __str__(self):
+        return (self.name + ' at ' + str(self.pos)
+                + ' with Dev ' + str(self.brightnessDev) + ' '
+                + str(self.shapeDev) + ' at ' + str(self.posPoint)
+                + ' and Point ' + str(self.brightnessPoint)) 
+
+    def __repr__(self):
+        return (self.name + '(pos=' + repr(self.pos) +
+                ', brightnessDev=' + repr(self.brightnessDev) +
+                ', shapeDev=' + repr(self.shapeDev) +
+                ', brightnessPoint=' + repr(self.brightnessPoint) + ' at ' + str(self.posPoint))
+     
+    def getBrightness(self):
+        #This makes some assumptions about the
+        #``Brightness`` / ``PhotoCal`` and should be treated as
+        #approximate.
+        return self.brightnessDev + self.brightnessPoint
+
+    def setBrightness(self, brightness):
+        self.brightness = self.brightnessDev + self.brightnessPoint
+    
+    def getBrightnessDev(self):
+        e = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev) 
+        return e.getBrightness()
+  
+    def getBrightnessPoint(self):
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        return d.getBrightness()
+
+    def getBrightnesses(self):
+        e = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        #print(e.getBrightness(),d.getBrightness(),'LOOK HERE BRIGHTNESS')
+        return [e.getBrightness(), d.getBrightness()]
+        #return [e.brightness, d.brightness]
+    
+    def _getModelPatches(self, img, minsb=0., modelMask=None):
+        e = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        
+        if minsb == 0. or minsb is None:
+            kw = {}
+        else:
+            kw = dict(minsb=minsb / 2.)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+            #print(self.halfsize,'HALFSIZE')
+        pe = e.getModelPatch(img, modelMask=modelMask, **kw)
+        pd = d.getModelPatch(img, modelMask=modelMask, **kw)
+        return (pe, pd)
+
+    def getModelPatch(self, img, minsb=0., modelMask=None):
+        pe, pd = self._getModelPatches(img, minsb=minsb, modelMask=modelMask)
+        return add_patches(pe, pd)
+
+    def getUnitFluxModelPatches(self, img, minval=0., modelMask=None):
+        # Needed for forced photometry
+        if minval > 0:
+            # allow each component half the error
+            minval = minval * 0.5
+        e = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+        return (e.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask) +
+                d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+
+    # MAGIC: ORDERING OF EXP AND DEV PARAMETERS
+    # MAGIC: ASSUMES EXP AND DEV SHAPES SAME LENGTH
+    # CompositeGalaxy.
+    def getParamDerivatives(self, img, modelMask=None):
+        e = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        #print(self.pos,self.posPoint,'Pos and PosPoint')
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+        e.dname = 'comp.dev'
+        d.dname = 'comp.point'
+        if self.isParamFrozen('pos'):
+            e.freezeParam('pos')
+        if self.isParamFrozen('posPoint'):
+            d.freezeParam('posPoint')
+        if self.isParamFrozen('brightnessDev'):
+            e.freezeParam('brightness')
+        if self.isParamFrozen('shapeDev'):
+            e.freezeParam('shape')
+        if self.isParamFrozen('brightnessPoint'):
+            d.freezeParam('brightness') 
+
+        de = e.getParamDerivatives(img, modelMask=modelMask)
+        dd = d.getParamDerivatives(img, modelMask=modelMask)
+
+        #if self.isParamFrozen('pos'):
+        #    derivs = de + dd
+        #else:
+        derivs = []
+        # "pos" is shared between the models, so add the derivs.
+        npos = len(self.pos.getStepSizes()) 
+        #for i in range(npos):
+        #    dp = add_patches(de[i], dd[i])
+        #    if dp is not None:
+        #        dp.setName('d(comp)/d(pos%i)' % i)
+        #    derivs.append(dp)
+        derivs.extend(de)#[npos:])
+        derivs.extend(dd)#[npos:])
+
+        return derivs
+
+
+class PSFandExpGalaxy_diffcentres(MultiParams, BasicSource):
+    '''
+    A galaxy with Exponential and deVaucouleurs components.
+
+    The two components share a position (ie the centers are the same),
+    but have different brightnesses and shapes.
+    '''
+
+    def __init__(self, pos, brightnessExp, shapeExp, posPoint,brightnessPoint):
+        MultiParams.__init__(self, pos, brightnessExp, shapeExp,
+                             posPoint,brightnessPoint)
+        self.name = self.getName()
+
+    @staticmethod
+    def getNamedParams():
+        return dict(pos=0, brightnessExp=1, shapeExp=2,
+                    posPoint=3,brightnessPoint=4)
+
+    def getName(self):
+        return 'PSFandExpGalaxy_diffcentres'
+
+    def __str__(self):
+        return (self.name + ' at ' + str(self.pos)
+                + ' with Exp ' + str(self.brightnessExp) + ' '
+                + str(self.shapeExp) + ' at ' + str(self.posPoint)
+                + ' and Point ' + str(self.brightnessPoint)) 
+
+    def __repr__(self):
+        return (self.name + '(pos=' + repr(self.pos) +
+                ', brightnessExp=' + repr(self.brightnessExp) +
+                ', shapeExp=' + repr(self.shapeExp) +
+                ', brightnessPoint=' + repr(self.brightnessPoint) + ' at ' + str(self.posPoint))
+    '''    
+    def getBrightness(self):
+        #This makes some assumptions about the
+        #``Brightness`` / ``PhotoCal`` and should be treated as
+        #approximate.
+        return self.brightnessExp + self.brightnessPoint
+    '''
+    def getBrightnesses(self):
+      
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        #print(e,d)
+        return [e.getBrightness(), d.getBrightness()]
+     
+    def getBrightnessPoint(self):
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        return d.getBrightness()
+    def getBrightnessExp(self):
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp) 
+        return e.getBrightness()
+  
+    def setBrightness(self, brightness):
+        self.brightness = self.brightnessDev + self.brightnessPoint
+    def getBrightness(self):
+        return self.brightnessExp+self.brightnessPoint 
+    def getPositionPoint(self):
+        return self.posPoint
+    def _getModelPatches(self, img, minsb=0., modelMask=None):
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        
+        if minsb == 0. or minsb is None:
+            kw = {}
+        else:
+            kw = dict(minsb=minsb / 2.)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+            #print(self.halfsize,'HALFSIZE')
+        pe = e.getModelPatch(img, modelMask=modelMask, **kw)
+        pd = d.getModelPatch(img, modelMask=modelMask, **kw)
+        return (pe, pd)
+
+    def getModelPatch(self, img, minsb=0., modelMask=None):
+        pe, pd = self._getModelPatches(img, minsb=minsb, modelMask=modelMask)
+        return add_patches(pe, pd)
+
+    def getUnitFluxModelPatches(self, img, minval=0., modelMask=None):
+        # Needed for forced photometry
+        if minval > 0:
+            # allow each component half the error
+            minval = minval * 0.5
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+        return (e.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask) +
+                d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+
+    # MAGIC: ORDERING OF EXP AND DEV PARAMETERS
+    # MAGIC: ASSUMES EXP AND DEV SHAPES SAME LENGTH
+    # CompositeGalaxy.
+    def getParamDerivatives(self, img, modelMask=None):
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        #print(self.pos,self.posPoint,'Pos and PosPoint')
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+        e.dname = 'comp.exp'
+        d.dname = 'comp.point'
+        if self.isParamFrozen('pos'):
+            e.freezeParam('pos')
+        if self.isParamFrozen('posPoint'):
+            d.freezeParam('posPoint')
+        if self.isParamFrozen('brightnessExp'):
+            e.freezeParam('brightnessExp')
+        if self.isParamFrozen('shapeExp'):
+            e.freezeParam('shape')
+        if self.isParamFrozen('brightnessPoint'):
+            d.freezeParam('brightnessPoint') 
+        #print(self.pos,self.posPoint)
+        de = e.getParamDerivatives(img, modelMask=modelMask)
+        dd = d.getParamDerivatives(img, modelMask=modelMask)
+
+        #if self.isParamFrozen('pos'):
+        #    derivs = de + dd
+        #else:
+        derivs = []
+        # "pos" is shared between the models, so add the derivs.
+        npos = len(self.pos.getStepSizes())
+        #print(self.pos.getStepSizes(),self.posPoint.getStepSizes()) 
+        #for i in range(npos):
+        #    dp = add_patches(de[i], dd[i])
+        #    if dp is not None:
+        #        dp.setName('d(comp)/d(pos%i)' % i)
+        #    derivs.append(dp)
+        derivs.extend(de)#[npos:])
+        derivs.extend(dd)#[npos:])
+
+        return derivs
+
+class PSFandCompGalaxy_diffcentres(MultiParams, BasicSource):
+    '''
+    A galaxy with Exponential and deVaucouleurs components.
+
+    The two components share a position (ie the centers are the same),
+    but have different brightnesses and shapes.
+    '''
+
+    def __init__(self, pos, brightnessExp, shapeExp, brightnessDev, shapeDev, posPoint,brightnessPoint):
+        MultiParams.__init__(self, pos, brightnessExp, shapeExp, brightnessDev, shapeDev,
+                             posPoint,brightnessPoint)
+        self.name = self.getName()
+
+    @staticmethod
+    def getNamedParams():
+        return dict(pos=0, brightnessExp=1, shapeExp=2, brightnessDev=3, shapeDev=4,
+                    posPoint=5,brightnessPoint=6)
+
+    def getName(self):
+        return 'PSFandCompGalaxy_diffcentres'
+
+    def __str__(self):
+        return (self.name + ' at ' + str(self.pos)
+                + ' with Dev ' + str(self.brightnessDev) + ' '
+                + str(self.shapeDev) + ' with Exp ' + str(self.brightnessExp) 
+                + ' ' + str(self.shapeExp) + ' at ' + str(self.posPoint)
+                + ' and Point ' + str(self.brightnessPoint)) 
+
+    def __repr__(self):
+        return (self.name + '(pos=' + repr(self.pos) +
+                ', brightnessDev=' + repr(self.brightnessDev) +
+                ', shapeDev=' + repr(self.shapeDev) + 
+                ', brightnessExp=' + repr(self.brightnessExp) +
+                ', shapeExp=' + repr(self.shapeExp) +
+                ', brightnessPoint=' + repr(self.brightnessPoint) + ' at ' + str(self.posPoint))
+
+    def getBrightness(self):
+        ''' This makes some assumptions about the
+        ``Brightness`` / ``PhotoCal`` and should be treated as
+        approximate.'''
+        return self.brightnessExp + self.brightnessDev + self.brightnessPoint
+    def setBrightness(self, brightness):
+        self.brightness = brightness
+
+
+    def getBrightnesses(self):
+        return [self.brightnessExp, self.brightnessDev, self.brightnessPoint]
+
+    def _getModelPatches(self, img, minsb=0., modelMask=None):
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        f = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        
+        if minsb == 0. or minsb is None:
+            kw = {}
+        else:
+            kw = dict(minsb=minsb / 2.)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+            #print(self.halfsize,'HALFSIZE')
+        pe = e.getModelPatch(img, modelMask=modelMask, **kw)
+        pd = d.getModelPatch(img, modelMask=modelMask, **kw)
+        pf = f.getModelPatch(img, modelMask=modelMask, **kw)
+        return (pe, pf, pd)
+
+    def getModelPatch(self, img, minsb=0., modelMask=None):
+        pe, pf, pd = self._getModelPatches(img, minsb=minsb, modelMask=modelMask)
+        return add_patches2(pe, pf, pd)
+
+    def getUnitFluxModelPatches(self, img, minval=0., modelMask=None):
+        # Needed for forced photometry
+        if minval > 0:
+            # allow each component half the error
+            minval = minval * 0.5
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        f = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = f.halfsize = self.halfsize
+        return (e.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask) +
+                f.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask) +
+                d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+
+    # MAGIC: ORDERING OF EXP AND DEV PARAMETERS
+    # MAGIC: ASSUMES EXP AND DEV SHAPES SAME LENGTH
+    # CompositeGalaxy.
+    def getParamDerivatives(self, img, modelMask=None):
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        f = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev)
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        #print(self.pos,self.posPoint,'Pos and PosPoint')
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = f.halfsize = self.halfsize
+        e.dname = 'comp.exp'
+        f.dname = 'comp.dev'
+        d.dname = 'comp.point'
+        if self.isParamFrozen('pos'):
+            e.freezeParam('pos')
+            f.freezeParam('pos')
+        if self.isParamFrozen('posPoint'):
+            d.freezeParam('posPoint')
+        if self.isParamFrozen('brightnessDev'):
+            f.freezeParam('brightness')
+        if self.isParamFrozen('shapeDev'):
+            f.freezeParam('shape')
+        if self.isParamFrozen('brightnessExp'):
+            e.freezeParam('brightness')
+        if self.isParamFrozen('shapeExp'):
+            e.freezeParam('shape')
+        if self.isParamFrozen('brightnessPoint'):
+            d.freezeParam('brightness') 
+
+        de = e.getParamDerivatives(img, modelMask=modelMask)
+        df = f.getParamDerivatives(img, modelMask=modelMask)
+        dd = d.getParamDerivatives(img, modelMask=modelMask)
+
+        if self.isParamFrozen('pos'):
+            derivs = de + df
+        else:
+            derivs = []
+        # "pos" is shared between the models, so add the derivs.
+        npos = len(self.pos.getStepSizes()) 
+        for i in range(npos):
+            dp = add_patches(de[i], df[i])
+            if dp is not None:
+                dp.setName('d(comp)/d(pos%i)' % i)
+            derivs.append(dp)
+        derivs.extend(de[npos:])
+        derivs.extend(df[npos:])
+        derivs.extend(dd)
+        return derivs
+
+
+class PSFandExpGalaxy(MultiParams, BasicSource):
+    '''
+    A galaxy with Exponential and deVaucouleurs components.
+
+    The two components share a position (ie the centers are the same),
+    but have different brightnesses and shapes.
+    '''
+
+    def __init__(self, pos, brightnessExp, shapeExp, brightnessPoint):
+        MultiParams.__init__(self, pos, brightnessExp, shapeExp,
+                             brightnessPoint)
+        self.name = self.getName()
+
+    @staticmethod
+    def getNamedParams():
+        return dict(pos=0, brightnessExp=1, shapeExp=2,
+                    brightnessPoint=3)
+
+    def getName(self):
+        return 'PSFandExpGalaxy'
+
+    def __str__(self):
+        return (self.name + ' at ' + str(self.pos)
+                + ' with Exp ' + str(self.brightnessExp) + ' '
+                + str(self.shapeExp)
+                + ' and Point ' + str(self.brightnessPoint))
+
+    def __repr__(self):
+        return (self.name + '(pos=' + repr(self.pos) +
+                ', brightnessExp=' + repr(self.brightnessExp) +
+                ', shapeExp=' + repr(self.shapeExp) +
+                ', brightnessPoint=' + repr(self.brightnessPoint))
+
+    def getBrightness(self):
+        ''' This makes some assumptions about the
+        ``Brightness`` / ``PhotoCal`` and should be treated as
+        approximate.'''
+        return self.brightnessExp + self.brightnessPoint
+
+    def getBrightnesses(self):
+        return [self.brightnessExp, self.brightnessPoint]
+
+    def _getModelPatches(self, img, minsb=0., modelMask=None):
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        d = PointSource(self.pos, self.brightnessPoint)
+        if minsb == 0. or minsb is None:
+            kw = {}
+        else:
+            kw = dict(minsb=minsb / 2.)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+        pe = e.getModelPatch(img, modelMask=modelMask, **kw)
+        pd = d.getModelPatch(img, modelMask=modelMask, **kw)
+        return (pe, pd)
+
+    def getModelPatch(self, img, minsb=0., modelMask=None):
+        pe, pd = self._getModelPatches(img, minsb=minsb, modelMask=modelMask)
+        return add_patches(pe, pd)
+
+    def getUnitFluxModelPatches(self, img, minval=0., modelMask=None):
+        # Needed for forced photometry
+        if minval > 0:
+            # allow each component half the error
+            minval = minval * 0.5
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        d = PointSource(self.pos, self.brightnessPoint)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+        return (e.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask) +
+                d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+
+    # MAGIC: ORDERING OF EXP AND DEV PARAMETERS
+    # MAGIC: ASSUMES EXP AND DEV SHAPES SAME LENGTH
+    # CompositeGalaxy.
+    def getParamDerivatives(self, img, modelMask=None):
+        e = ExpGalaxy(self.pos, self.brightnessExp, self.shapeExp)
+        d = PointSource(self.pos, self.brightnessPoint)
+        if hasattr(self, 'halfsize'):
+            e.halfsize = d.halfsize = self.halfsize
+        e.dname = 'comp.exp'
+        d.dname = 'comp.dev'
+        if self.isParamFrozen('pos'):
+            e.freezeParam('pos')
+            d.freezeParam('pos')
+        if self.isParamFrozen('brightnessExp'):
+            e.freezeParam('brightness')
+        if self.isParamFrozen('shapeExp'):
+            e.freezeParam('shape')
+        if self.isParamFrozen('brightnessPoint'):
+            d.freezeParam('brightness') 
+
+        de = e.getParamDerivatives(img, modelMask=modelMask)
+        dd = d.getParamDerivatives(img, modelMask=modelMask)
+
+        if self.isParamFrozen('pos'):
+            derivs = de + dd
+        else:
+            derivs = []
+            # "pos" is shared between the models, so add the derivs.
+            npos = len(self.pos.getStepSizes())
+            for i in range(npos):
+                dp = add_patches(de[i], dd[i])
+                if dp is not None:
+                    dp.setName('d(comp)/d(pos%i)' % i)
+                derivs.append(dp)
+            derivs.extend(de[npos:])
+            derivs.extend(dd[npos:])
+
+        return derivs
+

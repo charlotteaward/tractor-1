@@ -70,6 +70,19 @@ def add_patches(pa, pb):
             p += pb
     return p
 
+def add_patches2(pa, pb, pc):
+    p = pa
+    if pb is not None:
+        if p is None:
+            p = pb
+        else:
+            p += pb
+    if pc is not None:
+        if p is None:
+            p = pc
+        else:
+            p += pc
+    return p
 
 class Patch(object):
     '''

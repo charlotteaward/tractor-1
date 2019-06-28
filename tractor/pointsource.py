@@ -143,6 +143,7 @@ class PointSource(MultiParams, SingleProfileSource):
             bvals = self.brightness.getParams()
             allzero = True
             for i, bstep in enumerate(bsteps):
+                bstep=bstep
                 oldval = self.brightness.setParam(i, bvals[i] + bstep)
                 countsi = img.getPhotoCal().brightnessToCounts(self.brightness)
                 self.brightness.setParam(i, oldval)
@@ -199,7 +200,7 @@ class PointSource(MultiParams, SingleProfileSource):
                 psteps = pos.getStepSizes(img)
                 pvals = pos.getParams()
                 for i, pstep in enumerate(psteps):
-                    pdiff = pstep
+                    pdiff = pstep*0.05
                     p0 = patch0
                     oldval = pos.setParam(i, pvals[i] + pstep)
                     patchx = self.getUnitFluxModelPatch(img, minval=minval,

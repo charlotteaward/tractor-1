@@ -394,6 +394,7 @@ class NamedParams(object):
         self.namedparams = {}
         self.paramnames = {}
         named = self.getNamedParams()
+        
         self.addNamedParams(**named)
         return self
 
@@ -659,6 +660,8 @@ class NamedParams(object):
                 yield i, array[i]
 
     def _getLiquidArray(self, array):
+        
+        #print('array here',array,self.liquid)
         for i, (v, a) in enumerate(zip(self.liquid, array)):
             if v:
                 yield a
@@ -909,6 +912,7 @@ class MultiParams(BaseParams, NamedParams):
     '''
 
     def __init__(self, *args):
+      
         if len(args):
             self.subs = list(args)
         else:
@@ -1011,6 +1015,7 @@ class MultiParams(BaseParams, NamedParams):
         return len(self.subs)
 
     def _getActiveSubs(self):
+        #print('SUBS HERE',self.subs)
         for s in self._getLiquidArray(self.subs):
             # Should 'subs' be allowed to contain None values?
             if s is not None:

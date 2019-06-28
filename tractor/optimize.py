@@ -52,15 +52,18 @@ class Optimizer(object):
             for img in imgs:
                 # FIXME -- would be nice to allow multi-param linear sky models
                 assert(img.getSky().numberOfParams() == 1)
-
+        print(tractor.catalog.printLong())
         Nsourceparams = tractor.catalog.numberOfParams()
         srcs = list(tractor.catalog.getThawedSources())
 
         # Render unit-flux models for each source.
         #t0 = Time()
+        
         (umodels, umodtosource, umodsforsource
          ) = self._get_umodels(tractor, srcs, imgs, minsb, rois)
+        
         for umods in umodels:
+       
             assert(len(umods) == Nsourceparams)
         #tmods = Time() - t0
         #logverb('forced phot: getting unit-flux models:', tmods)
@@ -181,7 +184,7 @@ class Optimizer(object):
 
                 isvalid = False
                 isallzero = False
-
+        
                 for ui, um in enumerate(ums):
                     if um is None:
                         continue

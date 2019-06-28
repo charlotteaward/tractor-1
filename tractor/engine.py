@@ -57,7 +57,7 @@ class Catalog(MultiParams):
 
     '''
     deepcopy = MultiParams.copy
-
+    
     def __str__(self):
         return ('Catalog: %i sources, %i parameters' %
                 (len(self), self.numberOfParams()))
@@ -120,13 +120,16 @@ class Tractor(MultiParams):
         '''
         if images is None:
             images = []
+       
         if catalog is None:
             catalog = []
         if not isinstance(images, Images):
             images = Images(*images)
-        if not isinstance(catalog, Catalog):
+        if not isinstance(catalog, Catalog): 
             catalog = Catalog(*catalog)
+        
         super(Tractor, self).__init__(images, catalog)
+        #print('ParamNames',catalog.getParamNames)
         self.modtype = np.float32
         self.modelMasks = None
         self.expectModelMasks = False
@@ -162,14 +165,14 @@ class Tractor(MultiParams):
         return S
 
     def __setstate__(self, state):
-        if len(state) == 6:
+        #if len(state) == 6:
             # "backwards compat"
-            (images, catalog, self.liquid, self.modtype, self.modelMasks,
-             self.expectModelMasks) = state
-            from .lsqr_optimizer import LsqrOptimizer
-            self.optimizer = LsqrOptimizer()
-        elif len(state) == 8:
-            (ver, images, catalog, self.liquid, self.modtype, self.modelMasks,
+        #    (images, catalog, self.liquid, self.modtype, self.modelMasks,
+        #     self.expectModelMasks) = state
+        #    from .lsqr_optimizer import LsqrOptimizer
+        #    self.optimizer = LsqrOptimizer()
+        #elif len(state) == 8:
+        (ver, images, catalog, self.liquid, self.modtype, self.modelMasks,
              self.expectModelMasks, self.optimizer) = state
         self.subs = [images, catalog]
 
