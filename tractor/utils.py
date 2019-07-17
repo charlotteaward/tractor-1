@@ -660,7 +660,6 @@ class NamedParams(object):
                 yield i, array[i]
 
     def _getLiquidArray(self, array):
-        
         #print('array here',array,self.liquid)
         for i, (v, a) in enumerate(zip(self.liquid, array)):
             if v:

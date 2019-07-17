@@ -176,8 +176,8 @@ class Galaxy(MultiParams, SingleProfileSource):
                 derivs.extend([None] * len(params))
                 psteps = []
             for i, pstep in enumerate(psteps):
-                pstep=pstep*0.05
-                print(params[i],params[i] + pstep)
+                pstep=pstep
+                #print(params[i],params[i] + pstep)
                 oldval = pos0.setParam(i, params[i] + pstep)
                 (px, py) = img.getWcs().positionToPixel(pos0, self)
                 pos0.setParam(i, oldval)
@@ -1087,11 +1087,20 @@ class CompositeGalaxy(MultiParams, BasicSource):
         d = DevGalaxy(self.pos, self.brightnessDev, self.shapeDev)
         if hasattr(self, 'halfsize'):
             e.halfsize = d.halfsize = self.halfsize
+        ''' 
+        out = add_patches(e.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask),
+                d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+        return out
+
+
+        '''
         return (e.getUnitFluxModelPatches(img, minval=minval,
                                           modelMask=modelMask) +
                 d.getUnitFluxModelPatches(img, minval=minval,
                                           modelMask=modelMask))
-
+        
     # MAGIC: ORDERING OF EXP AND DEV PARAMETERS
     # MAGIC: ASSUMES EXP AND DEV SHAPES SAME LENGTH
     # CompositeGalaxy.
@@ -1153,7 +1162,7 @@ class PSFandDevGalaxy_diffcentres(MultiParams, BasicSource):
                     posPoint=3,brightnessPoint=4)
 
     def getName(self):
-        return 'PSFandExpGalaxy_diffcentres'
+        return 'PSFandDevGalaxy_diffcentres'
 
     def __str__(self):
         return (self.name + ' at ' + str(self.pos)
@@ -1210,6 +1219,17 @@ class PSFandDevGalaxy_diffcentres(MultiParams, BasicSource):
         pe, pd = self._getModelPatches(img, minsb=minsb, modelMask=modelMask)
         return add_patches(pe, pd)
 
+    def getUnitPointFluxModelPatches(self, img, minval=0., modelMask=None):
+        # Needed for forced photometry
+        if minval > 0:
+            # allow each component half the error
+            minval = minval * 0.5
+        
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        return (d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+
+
     def getUnitFluxModelPatches(self, img, minval=0., modelMask=None):
         # Needed for forced photometry
         if minval > 0:
@@ -1219,11 +1239,19 @@ class PSFandDevGalaxy_diffcentres(MultiParams, BasicSource):
         d = PointSource(self.posPoint, self.brightnessPoint)
         if hasattr(self, 'halfsize'):
             e.halfsize = d.halfsize = self.halfsize
+        
         return (e.getUnitFluxModelPatches(img, minval=minval,
-                                          modelMask=modelMask) +
+                                      modelMask=modelMask) +
+            d.getUnitFluxModelPatches(img, minval=minval,
+                                      modelMask=modelMask))
+
+        '''
+        out = add_patches(e.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask),
                 d.getUnitFluxModelPatches(img, minval=minval,
                                           modelMask=modelMask))
-
+        return out
+        '''
     # MAGIC: ORDERING OF EXP AND DEV PARAMETERS
     # MAGIC: ASSUMES EXP AND DEV SHAPES SAME LENGTH
     # CompositeGalaxy.
@@ -1320,7 +1348,7 @@ class PSFandExpGalaxy_diffcentres(MultiParams, BasicSource):
         return e.getBrightness()
   
     def setBrightness(self, brightness):
-        self.brightness = self.brightnessDev + self.brightnessPoint
+        self.brightness = self.brightnessExp + self.brightnessPoint
     def getBrightness(self):
         return self.brightnessExp+self.brightnessPoint 
     def getPositionPoint(self):
@@ -1343,6 +1371,16 @@ class PSFandExpGalaxy_diffcentres(MultiParams, BasicSource):
     def getModelPatch(self, img, minsb=0., modelMask=None):
         pe, pd = self._getModelPatches(img, minsb=minsb, modelMask=modelMask)
         return add_patches(pe, pd)
+    def getUnitPointFluxModelPatches(self, img, minval=0., modelMask=None):
+        # Needed for forced photometry
+        if minval > 0:
+            # allow each component half the error
+            minval = minval * 0.5
+        
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        return (d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+
 
     def getUnitFluxModelPatches(self, img, minval=0., modelMask=None):
         # Needed for forced photometry
@@ -1353,6 +1391,16 @@ class PSFandExpGalaxy_diffcentres(MultiParams, BasicSource):
         d = PointSource(self.posPoint, self.brightnessPoint)
         if hasattr(self, 'halfsize'):
             e.halfsize = d.halfsize = self.halfsize
+        ''' 
+        if self.isParamFrozen('brightnessExp'):
+            return(d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+        elif self.isParamFrozen('brightnessPoint'):
+            print('GOT HERE')
+            return (e.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+        else:
+        '''
         return (e.getUnitFluxModelPatches(img, minval=minval,
                                           modelMask=modelMask) +
                 d.getUnitFluxModelPatches(img, minval=minval,
@@ -1468,6 +1516,17 @@ class PSFandCompGalaxy_diffcentres(MultiParams, BasicSource):
     def getModelPatch(self, img, minsb=0., modelMask=None):
         pe, pf, pd = self._getModelPatches(img, minsb=minsb, modelMask=modelMask)
         return add_patches2(pe, pf, pd)
+    
+    def getUnitPointFluxModelPatches(self, img, minval=0., modelMask=None):
+        # Needed for forced photometry
+        if minval > 0:
+            # allow each component half the error
+            minval = minval * 0.5
+        
+        d = PointSource(self.posPoint, self.brightnessPoint)
+        return (d.getUnitFluxModelPatches(img, minval=minval,
+                                          modelMask=modelMask))
+
 
     def getUnitFluxModelPatches(self, img, minval=0., modelMask=None):
         # Needed for forced photometry

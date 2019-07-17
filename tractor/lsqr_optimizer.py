@@ -34,7 +34,7 @@ class LsqrOptimizer(Optimizer):
             # Sky derivatives are part of the image derivatives, so go
             # first in the derivative list.
             derivs = skyderivs + derivs
-        assert(len(derivs) == tractor.numberOfParams())
+        #assert(len(derivs) == tractor.numberOfParams())
         self._lsqr_forced_photom(
             tractor, result, derivs, mod0, imgs, umodels,
             rois, scales, priors, sky, minFlux, justims0, subimgs,

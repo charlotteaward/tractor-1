@@ -2,7 +2,7 @@ from __future__ import print_function
 import numpy as np
 from astrometry.util.ttime import Time
 from tractor.engine import logverb, OptResult, logmsg
-
+from tractor.galaxy import ExpGalaxy, DevGalaxy, FixedCompositeGalaxy, PSFandExpGalaxy_diffcentres, PSFandDevGalaxy_diffcentres, PSFandCompGalaxy_diffcentres 
 
 class Optimizer(object):
     def optimize(self, tractor, alphas=None, damp=0, priors=True,
@@ -52,10 +52,12 @@ class Optimizer(object):
             for img in imgs:
                 # FIXME -- would be nice to allow multi-param linear sky models
                 assert(img.getSky().numberOfParams() == 1)
-        print(tractor.catalog.printLong())
+        #print(tractor.catalog.printLong())
+        
         Nsourceparams = tractor.catalog.numberOfParams()
         srcs = list(tractor.catalog.getThawedSources())
-
+        fsrcs = list(tractor.catalog.getFrozenSources())
+        #print(srcs,fsrcs)
         # Render unit-flux models for each source.
         #t0 = Time()
         
@@ -63,7 +65,7 @@ class Optimizer(object):
          ) = self._get_umodels(tractor, srcs, imgs, minsb, rois)
         
         for umods in umodels:
-       
+            print(Nsourceparams, len(umods))
             assert(len(umods) == Nsourceparams)
         #tmods = Time() - t0
         #logverb('forced phot: getting unit-flux models:', tmods)
@@ -179,12 +181,16 @@ class Optimizer(object):
                     # scaled min val to be less than minsb
                     mv = minsb / counts
                 mask = tractor._getModelMaskFor(img, src)
-                ums = src.getUnitFluxModelPatches(
-                    img, minval=mv, modelMask=mask)
+                if isinstance(src, (PSFandExpGalaxy_diffcentres,PSFandDevGalaxy_diffcentres)):
+                    ums=src.getUnitPointFluxModelPatches(
+                        img, minval=mv, modelMask=mask)
+                else:  
+                    ums = src.getUnitFluxModelPatches(
+                        img, minval=mv, modelMask=mask)
 
                 isvalid = False
                 isallzero = False
-        
+                
                 for ui, um in enumerate(ums):
                     if um is None:
                         continue

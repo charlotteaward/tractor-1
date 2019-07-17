@@ -200,7 +200,7 @@ class PointSource(MultiParams, SingleProfileSource):
                 psteps = pos.getStepSizes(img)
                 pvals = pos.getParams()
                 for i, pstep in enumerate(psteps):
-                    pdiff = pstep*0.05
+                    pdiff = pstep#*0.05
                     p0 = patch0
                     oldval = pos.setParam(i, pvals[i] + pstep)
                     patchx = self.getUnitFluxModelPatch(img, minval=minval,
