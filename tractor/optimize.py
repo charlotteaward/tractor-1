@@ -57,7 +57,7 @@ class Optimizer(object):
         Nsourceparams = tractor.catalog.numberOfParams()
         srcs = list(tractor.catalog.getThawedSources())
         fsrcs = list(tractor.catalog.getFrozenSources())
-        #print(srcs,fsrcs)
+        
         # Render unit-flux models for each source.
         #t0 = Time()
         
@@ -65,7 +65,7 @@ class Optimizer(object):
          ) = self._get_umodels(tractor, srcs, imgs, minsb, rois)
         
         for umods in umodels:
-            print(Nsourceparams, len(umods))
+       
             assert(len(umods) == Nsourceparams)
         #tmods = Time() - t0
         #logverb('forced phot: getting unit-flux models:', tmods)
@@ -87,6 +87,8 @@ class Optimizer(object):
 
         #t0 = Time()
         fsrcs = list(tractor.catalog.getFrozenSources())
+        
+
         mod0 = []
         for img in imlist:
             # "sky = not sky": I'm not just being contrary :)
@@ -182,7 +184,7 @@ class Optimizer(object):
                     mv = minsb / counts
                 mask = tractor._getModelMaskFor(img, src)
                 if isinstance(src, (PSFandExpGalaxy_diffcentres,PSFandDevGalaxy_diffcentres)):
-                    ums=src.getUnitPointFluxModelPatches(
+                    ums=src.getUnitFluxModelPatches(
                         img, minval=mv, modelMask=mask)
                 else:  
                     ums = src.getUnitFluxModelPatches(

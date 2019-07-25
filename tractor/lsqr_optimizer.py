@@ -21,14 +21,18 @@ class LsqrOptimizer(Optimizer):
             return
         Nsourceparams = len(umodels[0])
         imgs = tractor.images
-
+        #print(umodels,Nsourceparams)
         #t0 = Time()
         derivs = [[] for i in range(Nsourceparams)]
+        #print('DERIVS',derivs)
         for tim, umods, scale in zip(imlist, umodels, scales):
             for um, dd in zip(umods, derivs):
+                print('LOOK',um,dd)
                 if um is None:
+                    
                     continue
                 dd.append((um * scale, tim))
+        #print('DERIVS',derivs)
         #logverb('forced phot: derivs', Time() - t0)
         if sky:
             # Sky derivatives are part of the image derivatives, so go
@@ -70,6 +74,7 @@ class LsqrOptimizer(Optimizer):
             tryAgain = False
 
             p0 = tractor.getParams()
+            #print('params',p0)
             if sky:
                 p0sky = p0[:Nsky]
                 p0 = p0[Nsky:]

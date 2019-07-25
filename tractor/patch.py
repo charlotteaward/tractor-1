@@ -446,3 +446,50 @@ class Patch(object):
 
     def __sub__(self, other):
         return self.performArithmetic(other, '__isub__')
+
+    def patch_sum(self, other, otype=float):
+        assert(isinstance(other, Patch))
+        '''
+        if (self.x0 == other.getX0() and self.y0 == other.getY0() and
+                self.shape == other.shape):
+            assert(self.x0 == other.getX0())
+            assert(self.y0 == other.getY0())
+            assert(self.shape == other.shape)
+            if self.patch is None or other.patch is None:
+                return Patch(self.x0, self.y0, None)
+            pcopy = self.patch.copy()
+            op = getattr(pcopy, opname)
+            return Patch(self.x0, self.y0, op(other.patch))
+        '''
+        (ph, pw) = self.patch.shape
+        (ox0, oy0) = other.getX0(), other.getY0()
+        (oh, ow) = other.shape
+
+        # Find the union of the regions.
+        ux0 = min(ox0, self.x0)
+        uy0 = min(oy0, self.y0)
+        ux1 = max(ox0 + ow, self.x0 + pw)
+        uy1 = max(oy0 + oh, self.y0 + ph)
+
+        # Set the "self" portion of the union
+        p = np.zeros((uy1 - uy0, ux1 - ux0), dtype=otype)
+        p[self.y0 - uy0: self.y0 - uy0 + ph,
+          self.x0 - ux0: self.x0 - ux0 + pw] = self.patch
+
+        # Get a slice for the "other"'s portion of the union
+        psub = p[oy0 - uy0: oy0 - uy0 + oh,
+                 ox0 - ux0: ox0 - ux0 + ow]
+        #psub2 = other.patch[oy0 - uy0: oy0 - uy0 + oh,
+        #         ox0 - ux0: ox0 - ux0 + ow]
+
+        #print(psub.shape,other.patch.shape)
+        # Perform the in-place += or -= operation on "psub"
+        
+        out = add_patches(psub, other.patch)
+        p[oy0 - uy0: oy0 - uy0 + oh,
+                 ox0 - ux0: ox0 - ux0 + ow] = out
+        #op = getattr(psub, opname)
+        #op(other.getImage())
+        return Patch(ux0, uy0, p)
+
+
